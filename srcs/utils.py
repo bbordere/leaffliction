@@ -128,3 +128,15 @@ filters_table = {
 }
 
 extensions = ["_" + key for key in filters_table]
+
+params = {
+    "Blue": "blue",
+    "Blue-Yellow": "yellow",
+    "Green": "green",
+    "Green-Magenta": "magenta",
+    "Hue": "purple",
+    "Lightness": "gray",
+    "Red": "red",
+    "Saturation": "cyan",
+    "Value": "orange",
+}

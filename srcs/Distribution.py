@@ -43,6 +43,7 @@ def main() -> None:
         xlabel="Labels",
         ylabel="Count",
     )
+
     plt.xticks(rotation=45)
     fig.tight_layout()
     fig.subplots_adjust(top=0.9)
