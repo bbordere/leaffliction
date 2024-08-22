@@ -163,4 +163,5 @@ cython_debug/
 
 data/
 augmented_directory/
-transformations/
+.transformations/
+.*/

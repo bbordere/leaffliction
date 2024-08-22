@@ -9,12 +9,23 @@ import matplotlib.pyplot as plt
 import os
 import matplotlib.gridspec as grsp
 from utils import params
+from typing import Optional
+import multiprocessing
 
 pcv.params.line_thickness = 2
 pcv.params.dpi = 100
 
 
 def analyze_pcv(img: MatLike, gray_img: MatLike) -> MatLike:
+    """Apply analyze filter on img
+
+    Args:
+        img (MatLike): img to apply filter
+        gray_img (MatLike): grayscale img
+
+    Returns:
+        MatLike: filtered img
+    """
     bin_mask = pcv.threshold.otsu(gray_img=gray_img, object_type="dark")
     roi = pcv.roi.rectangle(img=img, x=0, y=0, h=255, w=255)
 
@@ -25,6 +36,15 @@ def analyze_pcv(img: MatLike, gray_img: MatLike) -> MatLike:
 
 
 def roi_pcv(img: MatLike, gray_img: MatLike) -> MatLike:
+    """apply roi filter on img
+
+    Args:
+        img (MatLike): img to apply filter
+        gray_img (MatLike): grayscale img
+
+    Returns:
+        MatLike: filtered img
+    """
     bin_mask = pcv.threshold.triangle(gray_img=gray_img, object_type="dark")
 
     color_pix = np.where(bin_mask != 0)
@@ -44,6 +64,15 @@ def roi_pcv(img: MatLike, gray_img: MatLike) -> MatLike:
 
 
 def landmarks_pcv(img: MatLike, gray_img: MatLike) -> MatLike:
+    """apply pseudo-landmkars filter on img
+
+    Args:
+        img (MatLike): img to apply filter
+        gray_img (MatLike): grayscale img
+
+    Returns:
+        MatLike: filtered img
+    """
     res = img.copy()
     bin_img = pcv.threshold.otsu(gray_img=gray_img, object_type="dark")
     bin_img = pcv.fill_holes(bin_img)
@@ -57,6 +86,14 @@ def landmarks_pcv(img: MatLike, gray_img: MatLike) -> MatLike:
 
 
 def save_histogram(channels: list, params: dict, src: pathlib.Path, dest: pathlib.Path):
+    """create and save color histogram of img with its channels
+
+    Args:
+        channels (list): color channels
+        params (dict): formating params for color
+        src (pathlib.Path): src path
+        dest (pathlib.Path): dest path
+    """
     fig = plt.figure(figsize=(10, 10))
     new_plot = fig.add_subplot()
     for i, key in enumerate(params):
@@ -67,65 +104,139 @@ def save_histogram(channels: list, params: dict, src: pathlib.Path, dest: pathli
     new_plot.set_axis_off()
     new_plot.figure.tight_layout()
     new_plot.figure.savefig(
-        str(dest) + "/" + src.name[:-4] + "_trans_histogram.JPG", dpi=25.6
+        str(dest) + "/" + src.name[:-4] + "_trans_histogram.JPG",
+        dpi=25.6,
     )
     plt.close()
 
 
-def color_hist_pcv(
-    img: MatLike,
-    ax: np.ndarray = None,
-    save: bool = False,
-    src: pathlib.Path = None,
-    dest: pathlib.Path = None,
-):
+def convert_color_spaces(img: np.ndarray) -> list:
+    """convert color spaces of an img
+
+    Args:
+        img (np.ndarray): img to convert
+
+    Returns:
+        list: all channels of img
+    """
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
-
-    channels = [
+    return [
         img[:, :, 0],
         img[:, :, 1],
-        img[:, :, 2],
+        img[:, :, 2],  # BGR channels
         hsv[:, :, 0],
         hsv[:, :, 1],
-        hsv[:, :, 2],
+        hsv[:, :, 2],  # HSV channels
         lab[:, :, 0],
         lab[:, :, 1],
-        lab[:, :, 2],
+        lab[:, :, 2],  # LAB channels
     ]
+
+
+def plot_histogram(ax, channels: list, params: dict) -> None:
+    """plot the color histogram to give axis
+
+    Args:
+        ax (_type_): ax to plot
+        channels (list): color channels
+        params (dict): formating params for color
+    """
+    for i, key in enumerate(params):
+        hist = cv2.calcHist([channels[i]], [0], None, [256], [0, 256])
+        hist = hist / hist.sum() * 100
+        ax.plot(hist, color=params[key], label=key)
+        ax.set_xlim([0, 256])
+        ax.set_xticks(range(0, 255, 25))
+    ax.grid(zorder=0)
+    ax.set_title("Color Histograms (Percentage of Pixels)")
+    ax.set_xlabel("Intensity")
+    ax.set_ylabel("Percentage of Pixels")
+    ax.legend()
+
+
+def display_histogram(channels: list, params: dict) -> None:
+    """display color histogram
+
+    Args:
+        channels (list): color channels
+        params (dict): formating params for color
+    """
+    plt.figure()
+    for i, key in enumerate(params):
+        hist = cv2.calcHist([channels[i]], [0], None, [256], [0, 256])
+        hist = hist / hist.sum() * 100
+        plt.plot(hist, color=params[key], label=key)
+    plt.xlim([0, 256])
+    plt.xticks(range(0, 255, 25))
+    plt.grid(zorder=0)
+    plt.title("Color Histograms (Percentage of Pixels)")
+    plt.xlabel("Intensity")
+    plt.ylabel("Percentage of Pixels")
+    plt.legend()
+    plt.show()
+    plt.close()
+
+
+def color_hist_pcv(
+    img: np.ndarray,
+    ax: Optional[np.ndarray] = None,
+    save: bool = False,
+    src: Optional[pathlib.Path] = None,
+    dest: Optional[pathlib.Path] = None,
+):
+    """handle color histogram
+
+    Args:
+        img (np.ndarray): img to analyze
+        ax (Optional[np.ndarray], optional): ax to plot. Defaults to None.
+        save (bool, optional): saving to disk. Defaults to False.
+        src (Optional[pathlib.Path], optional): path to img. Defaults to None.
+        dest (Optional[pathlib.Path], optional): dest path to saved img. Defaults to None.
+    """
+    channels = convert_color_spaces(img)
 
     if save:
         save_histogram(channels, params, src, dest)
-        return
-
-    if ax is not None:
-        for i, key in enumerate(params):
-            hist = cv2.calcHist([channels[i]], [0], None, [256], [0, 256])
-            hist = hist / hist.sum() * 100
-            ax.plot(hist, color=params[key], label=key)
-            ax.set_xlim([0, 256])
-            ax.set_xticks(range(0, 255, 25))
-
-        ax.grid(zorder=0)
-        ax.set_title("Color Histograms (Percentage of Pixels)")
-        ax.set_xlabel("Intensity")
-        ax.set_ylabel("Percentage of Pixels")
-        ax.legend()
-
+    elif ax is not None:
+        plot_histogram(ax, channels, params)
     else:
-        for i, key in enumerate(params):
-            hist = cv2.calcHist([channels[i]], [0], None, [256], [0, 256])
-            hist = hist / hist.sum() * 100
-            plt.plot(hist, color=params[key], label=key)
-            plt.xlim([0, 256])
-            plt.xticks(range(0, 255, 25))
+        display_histogram(channels, params)
 
-        plt.grid(zorder=0)
-        plt.title("Color Histograms (Percentage of Pixels)")
-        plt.xlabel("Intensity")
-        plt.ylabel("Percentage of Pixels")
-        plt.legend()
-        plt.show()
+
+def save_transformed_image(
+    image: MatLike, dest: pathlib.Path, path: pathlib.Path, key: str
+) -> None:
+    """save transformed img to dest
+
+    Args:
+        image (MatLike): img to save
+        dest (pathlib.Path): destination path
+        path (pathlib.Path): src path
+        key (str): name of filter applied
+    """
+    output_path = dest / f"{path.stem}_trans_{key.lower()}.JPG"
+    cv2.imwrite(str(output_path), cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+
+
+def apply_transformations(img: MatLike, gray_img: MatLike) -> dict:
+    """get lookup table for transformations filters
+
+    Args:
+        img (MatLike): img to filter
+        gray_img (MatLike): grayscale img
+
+    Returns:
+        dict: look_up table
+    """
+    return {
+        "Original": cv2.cvtColor(img, cv2.COLOR_RGB2BGR),
+        "Blur": cv2.cvtColor(blur_pcv(img, gray_img), cv2.COLOR_RGB2BGR),
+        "Mask": cv2.cvtColor(mask_pcv(img, gray_img), cv2.COLOR_RGB2BGR),
+        "ROI": cv2.cvtColor(roi_pcv(img, gray_img), cv2.COLOR_RGB2BGR),
+        "Analyze": cv2.cvtColor(analyze_pcv(img, gray_img), cv2.COLOR_RGB2BGR),
+        "Landmarks": cv2.cvtColor(landmarks_pcv(img, gray_img), cv2.COLOR_RGB2BGR),
+    }
 
 
 def handle_all(
@@ -135,50 +246,65 @@ def handle_all(
     dest: pathlib.Path,
     save: bool = False,
 ) -> None:
+    """handle all transformation flag
+
+    Args:
+        img (MatLike): img to filter
+        gray_img (MatLike): grayscale of img
+        path (pathlib.Path): src path of img
+        dest (pathlib.Path): destination path for saved img
+        save (bool, optional): save to disk. Defaults to False.
+    """
     fig = plt.figure(figsize=(10, 6))
     gs = grsp.GridSpec(2, 6, height_ratios=[2, 1])
 
-    transformations = {
-        "Original": cv2.cvtColor(img, cv2.COLOR_RGB2BGR),
-        "Blur": cv2.cvtColor(blur_pcv(gray_img), cv2.COLOR_RGB2BGR),
-        "Mask": cv2.cvtColor(mask_pcv(img, gray_img), cv2.COLOR_RGB2BGR),
-        "ROI": cv2.cvtColor(roi_pcv(img, gray_img), cv2.COLOR_RGB2BGR),
-        "Analyze": cv2.cvtColor(analyze_pcv(img, gray_img), cv2.COLOR_RGB2BGR),
-        "Pseudo-Landmarks": cv2.cvtColor(
-            landmarks_pcv(img, gray_img), cv2.COLOR_RGB2BGR
-        ),
-    }
+    transformations = apply_transformations(img, gray_img)
 
-    for i, key in enumerate(transformations):
+    for i, (key, transformed_img) in enumerate(transformations.items()):
         if save:
-            if key == "Original":
-                continue
-            cv2.imwrite(
-                str(dest) + "/" + path.name[:-4] + "_trans_" + key.lower() + ".JPG",
-                cv2.cvtColor(transformations[key], cv2.COLOR_BGR2RGB),
-            )
+            # if key != "Original":
+            save_transformed_image(transformed_img, dest, path, key)
         else:
             ax = fig.add_subplot(gs[0, i])
-            ax.imshow(transformations[key])
+            ax.imshow(transformed_img)
             ax.axis("off")
             ax.set_title(key)
-    ax = fig.add_subplot(gs[1, :])
+
     if save:
         color_hist_pcv(img, save=True, src=path, dest=dest)
-        plt.close()
-        return
-    color_hist_pcv(img, ax)
-    plt.show()
-    plt.close()
+    else:
+        ax = fig.add_subplot(gs[1, :])
+        color_hist_pcv(img, ax)
+        plt.show()
+
+    plt.close(fig)
 
 
-def blur_pcv(gray_img: MatLike) -> MatLike:
+def blur_pcv(img: MatLike, gray_img: MatLike) -> MatLike:
+    """apply blur filter on img
+
+    Args:
+        img (MatLike): img to apply filter
+        gray_img (MatLike): grayscale img
+
+    Returns:
+        MatLike: filtered img
+    """
     bin_img = pcv.threshold.otsu(gray_img=gray_img, object_type="dark")
     blur = pcv.gaussian_blur(img=bin_img, ksize=(9, 9), sigma_x=0, sigma_y=None)
     return blur
 
 
 def mask_pcv(img: MatLike, background: MatLike) -> MatLike:
+    """apply mask filter on img
+
+    Args:
+        img (MatLike): img to apply filter
+        gray_img (MatLike): grayscale img
+
+    Returns:
+        MatLike: filtered img
+    """
     gray_img = pcv.rgb2gray_hsv(rgb_img=img, channel="s")
 
     mask = pcv.threshold.otsu(gray_img=gray_img, object_type="dark")
@@ -191,6 +317,12 @@ def mask_pcv(img: MatLike, background: MatLike) -> MatLike:
 
 
 def plot_image(img: MatLike, filter: str) -> None:
+    """plot img with legend
+
+    Args:
+        img (MatLike): img to plot
+        filter (str): filter name
+    """
     plt.imshow(cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
     plt.axis("off")
     plt.title(filter.capitalize())
@@ -203,26 +335,33 @@ def apply_filter(
     filter: str,
     save: bool = False,
 ) -> None:
+    """apply filter on given img at src path
+
+    Args:
+        path (pathlib.Path): path to img to filter
+        dest (pathlib.Path): destination to saved img
+        filter (str): name of filter to be applied
+        save (bool, optional): saving to disk. Defaults to False.
+    """
     img = cv2.imread(path)
     gray_img = pcv.rgb2gray_lab(rgb_img=img, channel="a")
-    match filter:
-        case "intensity":
-            color_hist_pcv(img, save=save, src=path, dest=dest)
-            return
-        case "all":
-            handle_all(img, path=path, dest=dest, save=save, gray_img=gray_img)
-            return
 
-        case "blur":
-            filtered = blur_pcv(gray_img)
-        case "mask":
-            filtered = mask_pcv(img, gray_img)
-        case "roi":
-            filtered = roi_pcv(img, gray_img)
-        case "analyze":
-            filtered = analyze_pcv(img, gray_img)
-        case "landmarks":
-            filtered = landmarks_pcv(img, gray_img)
+    filters = {
+        "blur": blur_pcv,
+        "mask": mask_pcv,
+        "roi": roi_pcv,
+        "analyze": analyze_pcv,
+        "landmarks": landmarks_pcv,
+    }
+
+    if filter == "intensity":
+        color_hist_pcv(img, save=save, src=path, dest=dest)
+        return
+    if filter == "all":
+        handle_all(img, path=path, dest=dest, save=save, gray_img=gray_img)
+        return
+
+    filtered = filters[filter](img, gray_img)
 
     if not save:
         plot_image(filtered, filter)
@@ -237,6 +376,13 @@ def handle_dir(
     src_path: pathlib.Path,
     dest_path: pathlib.Path,
 ):
+    """apply filter to whole directories and subdirectories at given path
+
+    Args:
+        args (argparse.Namespace): parsed arguments
+        src_path (pathlib.Path): src path of directory
+        dest_path (pathlib.Path): destination path
+    """
     for root, _, filenames in os.walk(src_path):
         images = [root + "/" + image for image in filenames if image.endswith(".JPG")]
         if len(images) == 0:
@@ -244,10 +390,13 @@ def handle_dir(
         tmp_dst = pathlib.Path(root.replace(str(src_path), str(dest_path)))
         if not pathlib.Path.exists(tmp_dst):
             tmp_dst.mkdir(parents=True)
-        for file in filenames:
-            apply_filter(
-                pathlib.Path(root + "/" + file), tmp_dst, args.transformation, save=True
+
+        with multiprocessing.Pool() as pool:
+            fct_args = list(
+                (pathlib.Path(root + "/" + file), tmp_dst, args.transformation, True)
+                for file in filenames
             )
+            pool.starmap(apply_filter, fct_args)
 
 
 def main() -> None:
