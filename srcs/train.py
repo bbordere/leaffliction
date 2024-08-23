@@ -31,12 +31,13 @@ def main():
 
     if not path.exists():
         sys.exit("Path does not exist")
-
     if not path.is_dir():
         sys.exit("Path is not a directory")
 
-    if not list(path.glob("*/*.jpg")):
-        sys.exit("No images found in directory")
+    for file in path.iterdir():
+        if file.is_file():
+            if not file.name.endswith((".jpg")):
+                sys.exit("Directory contains non-image files")
 
     train_ds = tf.keras.utils.image_dataset_from_directory(
         args.data_dir,
