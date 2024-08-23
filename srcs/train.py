@@ -36,7 +36,7 @@ def main():
 
     for file in path.iterdir():
         if file.is_file():
-            if not file.name.endswith((".jpg")):
+            if not file.name.endswith((".JPG")):
                 sys.exit("Directory contains non-image files")
 
     train_ds = tf.keras.utils.image_dataset_from_directory(
