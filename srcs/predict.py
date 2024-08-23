@@ -1,37 +1,56 @@
 import tensorflow as tf
-
-import cv2
 import sys
+import cv2
 import numpy as np
+import argparse
+import pathlib
 
-from Transformation import *
+from Transformation import roi_pcv, blur_pcv, mask_pcv, analyze_pcv, landmarks_pcv
 from plantcv import plantcv as pcv
 
 
-from tensorflow.keras import datasets, layers, models
+def main():
 
-new_model = tf.keras.models.load_model("my_model_no_filter.keras")
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "img_path",
+        type=str,
+        nargs="?",
+        default="path_to_image/",
+        help="Path to the image",
+    )
 
-class_names = []
+    args = parser.parse_args()
 
-with open("class_names.txt", "r") as file:
-    class_names = file.readline().split()
+    if not pathlib.Path(args.img_path).exists():
+        sys.exit("Path does not exist")
 
-image = cv2.imread(sys.argv[1])
-image = cv2.resize(image, (256, 256))
-gray_img = pcv.rgb2gray_lab(rgb_img=image, channel="a")
+    new_model = tf.keras.models.load_model("my_model_no_filter.keras")
 
-transformations = [
-    image,
-    roi_pcv(image, gray_img),
-    blur_pcv(image, gray_img),
-    mask_pcv(image, gray_img),
-    analyze_pcv(image, gray_img),
-    landmarks_pcv(image, gray_img),
-]
+    class_names = []
 
-for t in transformations:
-    x = np.asarray(image)
-    x = np.expand_dims(x, axis=0)
-    pred = new_model.predict(x)
-    print(class_names[np.argmax(pred)])
+    with open("class_names.txt", "r") as file:
+        class_names = file.readline().split()
+
+    image = cv2.imread(args.img_path)
+    image = cv2.resize(image, (256, 256))
+    gray_img = pcv.rgb2gray_lab(rgb_img=image, channel="a")
+
+    transformations = [
+        image,
+        roi_pcv(image, gray_img),
+        blur_pcv(image, gray_img),
+        mask_pcv(image, gray_img),
+        analyze_pcv(image, gray_img),
+        landmarks_pcv(image, gray_img),
+    ]
+
+    for t in transformations:
+        x = np.asarray(image)
+        x = np.expand_dims(x, axis=0)
+        pred = new_model.predict(x)
+        print(class_names[np.argmax(pred)])
+
+
+if __name__ == "__main__":
+    main()
