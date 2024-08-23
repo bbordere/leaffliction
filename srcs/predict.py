@@ -25,6 +25,18 @@ def main():
     if not pathlib.Path(args.img_path).exists():
         sys.exit("Path does not exist")
 
+    if not pathlib.Path(args.img_path).is_file():
+        sys.exit("Path is not a file")
+
+    if not args.img_path.endswith((".jpg")):
+        sys.exit("File is not an image")
+
+    if not pathlib.Path("my_model_no_filter.keras").exists():
+        sys.exit("Model does not exist")
+
+    if not pathlib.Path("class_names.txt").exists():
+        sys.exit("Class names file does not exist")
+
     new_model = tf.keras.models.load_model("my_model_no_filter.keras")
 
     class_names = []
