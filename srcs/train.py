@@ -1,7 +1,14 @@
+import logging, os
+
+logging.disable(logging.WARNING)
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+
 import tensorflow as tf
 import argparse
 import pathlib
 import sys
+
+IMAGE_SIZE = 128
 
 
 def main():
@@ -22,7 +29,7 @@ def main():
     parser.add_argument(
         "--epochs",
         type=int,
-        default=10,
+        default=8,
         help="Number of epochs",
     )
     args = parser.parse_args()
@@ -44,7 +51,7 @@ def main():
         validation_split=0.2,
         subset="training",
         seed=123,
-        image_size=(256, 256),
+        image_size=(IMAGE_SIZE, IMAGE_SIZE),
         batch_size=args.batch_size,
     )
 
@@ -53,7 +60,7 @@ def main():
         validation_split=0.2,
         subset="validation",
         seed=123,
-        image_size=(256, 256),
+        image_size=(IMAGE_SIZE, IMAGE_SIZE),
         batch_size=args.batch_size,
     )
 
@@ -66,31 +73,49 @@ def main():
 
     num_classes = 8
 
-    model = tf.keras.Sequential(
-        [
-            tf.keras.layers.Rescaling(1.0 / 255),
-            tf.keras.layers.Conv2D(16, 3, activation="relu"),
-            tf.keras.layers.MaxPooling2D(),
-            tf.keras.layers.Conv2D(16, 3, activation="relu"),
-            tf.keras.layers.MaxPooling2D(),
-            tf.keras.layers.Conv2D(16, 3, activation="relu"),
-            tf.keras.layers.MaxPooling2D(),
-            tf.keras.layers.Flatten(),
-            tf.keras.layers.Dense(128, activation="relu"),
-            tf.keras.layers.Dense(64, activation="relu"),
-            tf.keras.layers.Dense(num_classes, activation="softmax"),
-        ]
-    )
+    # model = tf.keras.Sequential(
+    #     [
+    #         tf.keras.layers.Rescaling(1.0 / 255),
+    #         tf.keras.layers.Conv2D(16, 3, activation="relu"),
+    #         tf.keras.layers.MaxPooling2D(),
+    #         tf.keras.layers.Conv2D(32, 3, activation="relu"),
+    #         tf.keras.layers.MaxPooling2D(),
+    #         tf.keras.layers.Conv2D(64, 3, activation="relu"),
+    #         tf.keras.layers.MaxPooling2D(),
+    #         tf.keras.layers.Flatten(),
+    #         tf.keras.layers.Dense(128, activation="relu"),
+    #         tf.keras.layers.Dense(64, activation="relu"),
+    #         tf.keras.layers.Dense(num_classes, activation="softmax"),
+    #     ]
+    # )
+
+    # model.compile(
+    #     optimizer="adam",
+    #     loss=tf.losses.SparseCategoricalCrossentropy(),
+    #     metrics=["accuracy"],
+    # )
+
+    model = tf.keras.models.Sequential()
+    model.add(tf.keras.layers.Rescaling(1.0 / 255))
+    model.add(tf.keras.layers.Conv2D(16, (3, 3), activation="relu"))
+    model.add(tf.keras.layers.MaxPooling2D(2, 2))
+    model.add(tf.keras.layers.Conv2D(16, (3, 3), activation="relu"))
+    model.add(tf.keras.layers.MaxPooling2D(2, 2))
+    model.add(tf.keras.layers.Conv2D(16, (1, 1), activation="relu"))
+    model.add(tf.keras.layers.MaxPooling2D(2, 2))
+    model.add(tf.keras.layers.Flatten())
+    model.add(tf.keras.layers.Dense(256, activation="relu"))
+    model.add(tf.keras.layers.Dense(num_classes, activation="softmax"))
 
     model.compile(
         optimizer="adam",
-        loss=tf.losses.SparseCategoricalCrossentropy(),
+        loss=tf.keras.losses.SparseCategoricalCrossentropy(),
         metrics=["accuracy"],
     )
 
     model.fit(train_ds, validation_data=val_ds, epochs=args.epochs)
 
-    model.save("my_model_no_filter.keras")
+    model.save("my_model_test2.keras")
 
 
 if __name__ == "__main__":
