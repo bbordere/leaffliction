@@ -46,7 +46,7 @@ def main():
     # if not pathlib.Path("class_names.txt").exists():
     #     sys.exit("Class names file does not exist")
 
-    new_model = tf.keras.models.load_model("best.keras")
+    new_model = tf.keras.models.load_model("my_model_no_filter.keras")
 
     # print(new_model.history)
 
@@ -74,9 +74,9 @@ def main():
                 image,
                 roi_pcv(image, gray_img),
                 cv2.cvtColor(blur_pcv(image, gray_img), cv2.COLOR_GRAY2RGB),
-                # mask_pcv(image, gray_img),
-                # analyze_pcv(image, gray_img),
-                # landmarks_pcv(image, gray_img),
+                mask_pcv(image, gray_img),
+                analyze_pcv(image, gray_img),
+                landmarks_pcv(image, gray_img),
             ]
 
             preds = []
@@ -87,7 +87,41 @@ def main():
                 preds.append(class_names[np.argmax(pred)])
             good += preds[np.argmax(preds)] == label
             print(pathlib.Path(p).name, "->", preds[np.argmax(preds)])
-        print()
+
+            fig, axes = plt.subplots(1, 2, figsize=(8, 6))
+            fig.patch.set_facecolor("#1b1b1b")
+
+            axes[0].imshow(transformations[0])
+            axes[1].imshow(transformations[3])
+
+            for ax in axes:
+                ax.axis("off")
+
+            fig.suptitle(
+                "===    DL classification    ===",
+                fontsize=30,
+                weight="bold",
+                y=0.15,
+                color="white",
+            )
+
+            plt.figtext(
+                0.5,
+                0.02,
+                "Class predicted : " + preds[np.argmax(preds)],
+                ha="center",
+                fontsize=14,
+                color="green",
+            )
+
+            if not os.path.exists("predict"):
+                os.makedirs("predict")
+
+            if not os.path.exists("predict/" + label):
+                os.makedirs("predict/" + label)
+
+            plt.savefig("predict/" + label + "/" + pathlib.Path(p).name + ".png")
+            plt.close(fig)
 
 
 # Grape_spot 0.9813953488372092
