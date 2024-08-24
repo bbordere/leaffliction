@@ -40,24 +40,15 @@ def main():
     # if not args.img_path.endswith((".JPG")):
     #     sys.exit("File is not an image")
 
-<<<<<<< Updated upstream
-    if not args.img_path.endswith((".JPG")):
-        sys.exit("File is not an image")
-=======
     # if not pathlib.Path("my_model_no_filter.keras").exists():
     #     sys.exit("Model does not exist")
->>>>>>> Stashed changes
 
     # if not pathlib.Path("class_names.txt").exists():
     #     sys.exit("Class names file does not exist")
 
     new_model = tf.keras.models.load_model("best.keras")
 
-<<<<<<< Updated upstream
-    new_model = tf.keras.models.load_model("my_model.keras")
-=======
     # print(new_model.history)
->>>>>>> Stashed changes
 
     class_names = []
 
