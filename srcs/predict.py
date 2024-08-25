@@ -13,6 +13,7 @@ import logging, os
 logging.disable(logging.WARNING)
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 import tensorflow as tf
+from train import IMAGE_SIZE
 
 
 import multiprocessing
@@ -46,9 +47,7 @@ def main():
     # if not pathlib.Path("class_names.txt").exists():
     #     sys.exit("Class names file does not exist")
 
-    new_model = tf.keras.models.load_model("my_model_no_filter.keras")
-
-    # print(new_model.history)
+    new_model = tf.keras.models.load_model("model.keras")
 
     class_names = []
 
@@ -67,16 +66,26 @@ def main():
 
         for p in images:
             image = cv2.imread(p)
-            image = cv2.resize(image, (256, 256))
-            gray_img = pcv.rgb2gray_lab(rgb_img=image, channel="a")
+            image_resized = cv2.resize(image, (IMAGE_SIZE, IMAGE_SIZE))
+            gray_img = pcv.rgb2gray_lab(rgb_img=image_resized, channel="a")
+            dest = pathlib.Path(".tmp/")
+            src = pathlib.Path(p)
+            color_hist_pcv(image_resized, None, True, src, dest)
+
+            hist = cv2.imread(
+                str(dest) + "/" + src.name[:-4] + "_trans_histogram.JPG",
+            )
+            hist = cv2.resize(hist, (IMAGE_SIZE, IMAGE_SIZE))
+            # print(hist)
 
             transformations = [
-                image,
-                roi_pcv(image, gray_img),
-                cv2.cvtColor(blur_pcv(image, gray_img), cv2.COLOR_GRAY2RGB),
-                mask_pcv(image, gray_img),
-                analyze_pcv(image, gray_img),
-                landmarks_pcv(image, gray_img),
+                image_resized,
+                roi_pcv(image_resized, gray_img),
+                cv2.cvtColor(blur_pcv(image_resized, gray_img), cv2.COLOR_GRAY2RGB),
+                mask_pcv(image_resized, gray_img),
+                analyze_pcv(image_resized, gray_img),
+                landmarks_pcv(image_resized, gray_img),
+                hist,
             ]
 
             preds = []
@@ -84,15 +93,22 @@ def main():
                 x = np.asarray(t)
                 x = np.expand_dims(x, axis=0)
                 pred = new_model.predict(x, verbose=0)
-                preds.append(class_names[np.argmax(pred)])
-            good += preds[np.argmax(preds)] == label
-            print(pathlib.Path(p).name, "->", preds[np.argmax(preds)])
+                preds.append(pred)
+
+            preds = np.sum(preds, axis=0)
+            label_pred = class_names[np.argmax(preds)]
+            print(pathlib.Path(p).name, "->", label_pred)
 
             fig, axes = plt.subplots(1, 2, figsize=(8, 6))
             fig.patch.set_facecolor("#1b1b1b")
 
-            axes[0].imshow(transformations[0])
-            axes[1].imshow(transformations[3])
+            axes[0].imshow(cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
+            axes[1].imshow(
+                cv2.cvtColor(
+                    mask_pcv(image, pcv.rgb2gray_lab(rgb_img=image, channel="a")),
+                    cv2.COLOR_RGB2BGR,
+                )
+            )
 
             for ax in axes:
                 ax.axis("off")
@@ -108,7 +124,7 @@ def main():
             plt.figtext(
                 0.5,
                 0.02,
-                "Class predicted : " + preds[np.argmax(preds)],
+                "Class predicted : " + label_pred,
                 ha="center",
                 fontsize=14,
                 color="green",
@@ -122,17 +138,6 @@ def main():
 
             plt.savefig("predict/" + label + "/" + pathlib.Path(p).name + ".png")
             plt.close(fig)
-
-
-# Grape_spot 0.9813953488372092
-# Grape_Black_rot 0.5067911714770797
-# Grape_Esca 0.8465991316931982
-# Grape_healthy 0.8625592417061612
-
-# Apple_rust 0.12727272727272726
-# Apple_healthy 0.5195121951219512
-# Apple_Black_rot 0.7887096774193548\
-# Apple_scab 0.7042925278219396
 
 
 if __name__ == "__main__":

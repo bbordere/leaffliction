@@ -12,8 +12,8 @@ from utils import params
 from typing import Optional
 import multiprocessing
 
-# pcv.params.line_thickness = 2
-# pcv.params.dpi = 100
+pcv.params.line_thickness = 2
+pcv.params.dpi = 100
 
 
 def analyze_pcv(img: MatLike, gray_img: MatLike) -> MatLike:
@@ -46,15 +46,31 @@ def roi_pcv(img: MatLike, gray_img: MatLike) -> MatLike:
     Returns:
         MatLike: filtered img
     """
-    # bin_mask = pcv.threshold.triangle(gray_img=gray_img, object_type="dark")
 
-    # background_mask = pcv.threshold.otsu(gray_img=gray_img, object_type="dark")
-    # background_mask = pcv.invert(pcv.fill_holes(background_mask))
+    mask = pcv.threshold.otsu(gray_img=gray_img, object_type="dark")
 
-    # background = pcv.apply_mask(img, background_mask, "black")
-    # # pcv.plot_image(background)
+    roi = pcv.roi.rectangle(img=mask, x=0, y=0, w=mask.shape[0], h=mask.shape[1])
+    roi_mask = pcv.roi.filter(mask=mask, roi=roi, roi_type="partial")
 
-    # # background = pcv.invert(pcv.fill_holes(background))
+    color_pix = np.where(mask != 0)
+    x, y, w, h = (
+        np.min(color_pix[1]),
+        np.min(color_pix[0]),
+        np.max(color_pix[1]) - np.min(color_pix[1]),
+        np.max(color_pix[0]) - np.min(color_pix[0]),
+    )
+
+    img_roi = img.copy()
+    img_roi[roi_mask != 0] = (0, 255, 0)
+    cv2.rectangle(img_roi, (x, y), (x + w, y + h), (255, 0, 0), 2)
+
+    return img_roi
+
+    # bin_mask = pcv.threshold.otsu(gray_img=gray_img, object_type="dark")
+    # bin_mask = pcv.threshold.binary(
+    #     gray_img=gray_img, object_type="light", threshold=100
+    # )
+    # # bin_mask = pcv.fill_holes(bin_mask)
 
     # color_pix = np.where(bin_mask != 0)
     # x, y, w, h = (
@@ -65,30 +81,55 @@ def roi_pcv(img: MatLike, gray_img: MatLike) -> MatLike:
     # )
     # roi = pcv.roi.rectangle(img, x, y, h, w)
 
+    # background_mask = pcv.threshold.otsu(gray_img=gray_img, object_type="dark")
+    # background_mask = pcv.invert(pcv.fill_holes(background_mask))
+
     # mask = pcv.roi.filter(mask=pcv.invert(bin_mask), roi=roi, roi_type="partial")
+    # colorized_mask = pcv.visualize.colorize_masks(masks=[mask], colors=["green"])
+    # colorized_mask = pcv.gaussian_blur(
+    #     img=colorized_mask, ksize=(9, 9), sigma_x=0, sigma_y=None
+    # )
+
+    # test = pcv.apply_mask(colorized_mask, pcv.invert(background_mask), "black")
+
+    # merged_image = pcv.visualize.overlay_two_imgs(test, img, alpha=0.5)
+    # merged_image = cv2.convertScaleAbs(merged_image, alpha=1.4, beta=1)
+    # cv2.rectangle(merged_image, (x, y), (x + w, y + h), (255, 0, 0), 2)
+    # return merged_image
+
+    # bin_mask = pcv.threshold.triangle(gray_img=gray_img, object_type="dark")
+    # color_pix = np.where(bin_mask != 0)
+    # x, y, w, h = (
+    #     np.min(color_pix[1]),
+    #     np.min(color_pix[0]),
+    #     np.max(color_pix[1]) - np.min(color_pix[1]),
+    #     np.max(color_pix[0]) - np.min(color_pix[0]),
+    # )
+    # roi = pcv.roi.rectangle(img, x, y, h, w)
+
+    # bin_mask = pcv.threshold.binary(
+    #     gray_img=gray_img, threshold=120, object_type="dark"
+    # )
+    # # return bin_mask
+
+    # background_mask = pcv.threshold.otsu(gray_img=gray_img, object_type="dark")
+    # background_mask = pcv.invert(pcv.fill_holes(background_mask))
+
+    # background = pcv.apply_mask(img, background_mask, "black")
+    # # pcv.plot_image(background)
+
+    # # background = pcv.invert(pcv.fill_holes(background))
+
+    # mask = pcv.roi.filter(mask=bin_mask, roi=roi, roi_type="partial")
     # colorized_mask = pcv.visualize.colorize_masks(masks=[mask], colors=["green"])
 
     # test = pcv.apply_mask(colorized_mask, pcv.invert(background_mask), "black")
 
     # merged_image = pcv.visualize.overlay_two_imgs(test, img, alpha=0.4)
+    # merged_image = cv2.convertScaleAbs(merged_image, alpha=1.5, beta=1)
     # cv2.rectangle(merged_image, (x, y), (x + w, y + h), (255, 0, 0), 2)
+
     # return merged_image
-
-    bin_mask = pcv.threshold.triangle(gray_img=gray_img, object_type="dark")
-
-    color_pix = np.where(bin_mask != 0)
-    x, y, w, h = (
-        np.min(color_pix[1]),
-        np.min(color_pix[0]),
-        np.max(color_pix[1]) - np.min(color_pix[1]),
-        np.max(color_pix[0]) - np.min(color_pix[0]),
-    )
-    roi = pcv.roi.rectangle(img, x, y, h, w)
-    mask = pcv.roi.filter(mask=bin_mask, roi=roi, roi_type="partial")
-    colorized_mask = pcv.visualize.colorize_masks(masks=[mask], colors=["green"])
-    merged_image = pcv.visualize.overlay_two_imgs(colorized_mask, img, alpha=0.4)
-    cv2.rectangle(merged_image, (x, y), (x + w, y + h), (255, 0, 0), 2)
-    return merged_image
 
 
 def landmarks_pcv(img: MatLike, gray_img: MatLike) -> MatLike:

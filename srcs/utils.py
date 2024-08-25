@@ -41,18 +41,21 @@ def rotate(img: MatLike, angle: int = 30) -> MatLike:
     M[0, 2] += (new_w / 2) - center[0]
     M[1, 2] += (new_h / 2) - center[1]
 
-    rotated_image = cv2.warpAffine(img, M, (new_w, new_h))
+    rotated_image = cv2.warpAffine(
+        img, M, (new_w, new_h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE
+    )
+    rotated_image = cv2.resize(rotated_image, (256, 256))
 
     return rotated_image
 
 
-def blur(img: MatLike, ksize: tuple = (15, 15)) -> MatLike:
+def blur(img: MatLike, ksize: tuple = (7, 7)) -> MatLike:
     """Apply gaussian blur to image
 
     Args:
         img (MatLike): image to be blurred
         ksize (tuple[int, int], optional): kernel size for blur effect. \
-            Defaults to (15, 15).
+            Defaults to (7, 7).
 
     Returns:
         MatLike: blurred img
@@ -61,12 +64,12 @@ def blur(img: MatLike, ksize: tuple = (15, 15)) -> MatLike:
     return blurred
 
 
-def contrast(img: MatLike, alpha: float = 1.5, beta: float = 1) -> MatLike:
+def contrast(img: MatLike, alpha: float = 1.3, beta: float = 1) -> MatLike:
     """Apply filter to change contrast
 
     Args:
         img (MatLike): image to be altered
-        alpha (float, optional): contrast factor. Defaults to 1.5.
+        alpha (float, optional): contrast factor. Defaults to 1.3.
         beta (float, optional): brigthness factor. Defaults to 1.
 
     Returns:
@@ -113,7 +116,14 @@ def project(img: MatLike) -> MatLike:
 
     M = cv2.getPerspectiveTransform(src_pts, dst_pts)
 
-    warped_image = cv2.warpPerspective(img, M, (256, 256))
+    warped_image = cv2.warpPerspective(
+        img,
+        M,
+        (256, 256),
+        borderValue=(0, 0, 0),
+        flags=cv2.INTER_CUBIC,
+        borderMode=cv2.BORDER_REPLICATE,
+    )
     return warped_image
 
 
