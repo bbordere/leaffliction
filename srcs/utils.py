@@ -12,7 +12,7 @@ def flip(img: MatLike) -> MatLike:
     Returns:
         MatLike: flipped img
     """
-    flipped = cv2.flip(img, 0)
+    flipped = cv2.flip(img, 1)
     return flipped
 
 
@@ -41,15 +41,13 @@ def rotate(img: MatLike, angle: int = 30) -> MatLike:
     M[0, 2] += (new_w / 2) - center[0]
     M[1, 2] += (new_h / 2) - center[1]
 
-    rotated_image = cv2.warpAffine(
-        img, M, (new_w, new_h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE
-    )
+    rotated_image = cv2.warpAffine(img, M, (new_w, new_h))
     rotated_image = cv2.resize(rotated_image, (256, 256))
 
     return rotated_image
 
 
-def blur(img: MatLike, ksize: tuple = (7, 7)) -> MatLike:
+def blur(img: MatLike, ksize: tuple = (5, 5)) -> MatLike:
     """Apply gaussian blur to image
 
     Args:
@@ -98,7 +96,9 @@ def scaling(img: MatLike, factor: float = 1.35) -> MatLike:
 
     cropped_image = img[start_y : start_y + new_h, start_x : start_x + new_w]
 
-    zoomed_image = cv2.resize(cropped_image, (w, h), interpolation=cv2.INTER_LINEAR)
+    zoomed_image = cv2.resize(
+        cropped_image, (w, h), interpolation=cv2.INTER_LINEAR
+    )
     return zoomed_image
 
 
@@ -116,14 +116,16 @@ def project(img: MatLike) -> MatLike:
 
     M = cv2.getPerspectiveTransform(src_pts, dst_pts)
 
-    warped_image = cv2.warpPerspective(
-        img,
-        M,
-        (256, 256),
-        borderValue=(0, 0, 0),
-        flags=cv2.INTER_CUBIC,
-        borderMode=cv2.BORDER_REPLICATE,
-    )
+    # warped_image = cv2.warpPerspective(
+    #     img,
+    #     M,
+    #     (256, 256),
+    #     borderValue=(0, 0, 0),
+    #     flags=cv2.INTER_CUBIC,
+    #     borderMode=cv2.BORDER_REPLICATE,
+    # )
+
+    warped_image = cv2.warpPerspective(img, M, (256, 256))
     return warped_image
 
 

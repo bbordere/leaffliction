@@ -3,474 +3,341 @@ from plantcv import plantcv as pcv
 import cv2
 import pathlib
 import sys
-from cv2.typing import MatLike
 import numpy as np
 import matplotlib.pyplot as plt
 import os
-import matplotlib.gridspec as grsp
-from utils import params
 from typing import Optional
 import multiprocessing
+from tensorflow.keras.preprocessing import image
+from tqdm import tqdm
+
+
+class ImageTransformer:
+    """Image Transformer class"""
+
+    def __init__(self) -> None:
+        self.img = None
+        self.img_no_back = None
+        self.back_mask = None
+        self.dis_mask = None
+        self.contours_mask = None
+        self.f_table = {
+            "blur": self.gaussian_blur,
+            "mask": self.mask,
+            "roi": self.roi,
+            "analyze": self.analyze,
+            "landmarks": self.landmarks,
+            "canny": self.canny_edges,
+        }
+
+    def open(
+        self, path: pathlib.Path, size: tuple = (256, 256), pred: bool = False
+    ):
+        """open image specified on path
+
+        Args:
+            path (pathlib.Path): path to img
+            size (tuple, optional): target size for image. Defaults to (256, 256).
+            pred (bool, optional): prediction flag. Defaults to False.
+        """
+
+        self.original_img = cv2.imread(str(path))
+        self.img = image.load_img(path, target_size=size)
+        self.img = image.img_to_array(self.img)
+        self.img = self.img.astype("uint8")
+
+        if not pred:
+            self.img = cv2.cvtColor(self.img, cv2.COLOR_BGR2RGB)
+
+        self.back_mask = self.compute_back_mask()
+        self.dis_mask = self.compute_dis_mask()
+
+    def compute_dis_mask(self) -> np.ndarray:
+        """compute disease mask for applying filters
+
+        Returns:
+            np.ndarray: disease binary mask
+        """
+        gray_img = pcv.rgb2gray_lab(rgb_img=self.img_no_back, channel="a")
+        thresh = pcv.threshold.triangle(gray_img=gray_img, object_type="dark")
+        return thresh
+
+    def compute_back_mask(self) -> np.ndarray:
+        """compute background binary mask
+
+        Returns:
+            np.ndarray: _description_
+        """
+        balanced_img = pcv.white_balance(self.img, mode="hist")
+        gray_img = pcv.rgb2gray_lab(rgb_img=balanced_img, channel="b")
+        thresh = pcv.threshold.triangle(gray_img=gray_img, object_type="light")
+        thresh = pcv.fill(bin_img=thresh, size=200)
+        mask = pcv.fill(bin_img=pcv.invert(gray_img=thresh), size=200)
+
+        contours, _ = cv2.findContours(
+            mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE
+        )
+        self.contours_mask = np.ones_like(mask)
+        res = self.contours_mask.copy()
+        if len(contours):
+            cv2.drawContours(
+                self.contours_mask,
+                contours[np.argmax([len(c) for c in contours])],
+                -1,
+                (0, 0, 0),
+                -1,
+            )
+            cv2.fillPoly(res, pts=contours, color=(0, 0, 0))
+
+        self.img_no_back = pcv.apply_mask(self.img, res, "white")
+        try:
+            res = pcv.fill_holes(res)
+        except RuntimeError:
+            pass
+        return res
+
+    def gaussian_blur(self, ksize: tuple = (3, 3)) -> np.ndarray:
+        """apply gaussian blur on image
+
+        Args:
+            ksize (tuple, optional): kernel size for blur. Defaults to (3, 3).
+
+        Returns:
+            np.ndarray: blured image
+        """
+        return pcv.gaussian_blur(self.dis_mask, ksize)
+
+    def analyze(self) -> np.ndarray:
+        """apply analyze filter on image
+
+        Returns:
+            np.ndarray: filtered image
+        """
+        roi = pcv.roi.rectangle(
+            img=self.back_mask,
+            x=0,
+            y=0,
+            w=self.dis_mask.shape[0],
+            h=self.dis_mask.shape[1],
+        )
+        roi_mask = pcv.roi.filter(
+            mask=self.dis_mask, roi=roi, roi_type="partial"
+        )
+        return pcv.analyze.size(img=self.img, labeled_mask=roi_mask)
+
+    def roi(self) -> np.ndarray:
+        """apply roi filter on image
+
+        Returns:
+            np.ndarray: filtered image
+        """
+        mask = pcv.invert(self.dis_mask)
+        mask = pcv.invert(pcv.logical_xor(self.back_mask, mask))
+
+        roi = pcv.roi.rectangle(
+            img=mask,
+            x=0,
+            y=0,
+            w=self.dis_mask.shape[0],
+            h=self.dis_mask.shape[1],
+        )
+        roi_mask = pcv.roi.filter(mask=mask, roi=roi, roi_type="partial")
+        roi_mask = pcv.logical_and(roi_mask, self.contours_mask)
+
+        color_pix = np.where(mask != 0)
+
+        img_roi = self.img.copy()
+        try:
+            x, y, w, h = (
+                np.min(color_pix[1]),
+                np.min(color_pix[0]),
+                np.max(color_pix[1]) - np.min(color_pix[1]),
+                np.max(color_pix[0]) - np.min(color_pix[0]),
+            )
+            img_roi[roi_mask != 0] = (0, 255, 0)
+            cv2.rectangle(img_roi, (x, y), (x + w, y + h), (255, 0, 0), 2)
+        except ValueError:
+            cv2.rectangle(
+                img_roi,
+                (0, 0),
+                (self.dis_mask.shape[0], self.dis_mask.shape[1]),
+                (255, 0, 0),
+                2,
+            )
+        return img_roi
+
+    def landmarks(self) -> np.ndarray:
+        """apply pseudo landmarks filter on image
+
+        Returns:
+            np.ndarray: filtered image
+        """
+        res = self.img.copy()
+        left, right, center = pcv.homology.x_axis_pseudolandmarks(
+            img=self.img, mask=self.back_mask
+        )
+
+        for pl, pc, pr in zip(
+            left.astype(int), right.astype(int), center.astype(int)
+        ):
+            cv2.circle(
+                res, pl[0], radius=5, color=(209, 23, 206), thickness=-1
+            )
+            cv2.circle(res, pr[0], radius=5, color=(49, 14, 204), thickness=-1)
+            cv2.circle(res, pc[0], radius=5, color=(222, 86, 18), thickness=-1)
+        return res
+
+    def mask(self) -> np.ndarray:
+        """apply mask filter on image
+
+        Returns:
+            np.ndarray: filtered image
+        """
+        return pcv.apply_mask(self.img_no_back, self.dis_mask, "white")
+
+    def canny_edges(self):
+        """apply canny edges filter on image
+
+        Returns:
+            np.ndarray: filtered image
+        """
+        res = self.img.copy()
+        canny_edges_contours = pcv.canny_edge_detect(self.img_no_back)
+        contours, _ = cv2.findContours(
+            canny_edges_contours, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+
+        cv2.drawContours(res, contours, -1, (0, 255, 0), 1)
+        return pcv.canny_edge_detect(self.img_no_back, high_thresh=145)
+
+    def all_filter(
+        self, src: pathlib.Path, dest: pathlib.Path, save: bool = False
+    ):
+        """handle all filters option
+
+        Args:
+            src (pathlib.Path): path to src image
+            dest (pathlib.Path): path to destination
+            save (bool, optional): save to disk. Defaults to False.
+        """
+        transformations = {
+            "Original": cv2.cvtColor(self.img, cv2.COLOR_RGB2BGR),
+            "Blur": cv2.cvtColor(self.gaussian_blur(), cv2.COLOR_RGB2BGR),
+            "Mask": cv2.cvtColor(self.mask(), cv2.COLOR_RGB2BGR),
+            "ROI": cv2.cvtColor(self.roi(), cv2.COLOR_RGB2BGR),
+            "Analyze": cv2.cvtColor(self.analyze(), cv2.COLOR_RGB2BGR),
+            "Landmarks": cv2.cvtColor(self.landmarks(), cv2.COLOR_RGB2BGR),
+            "Canny": cv2.cvtColor(self.canny_edges(), cv2.COLOR_RGB2BGR),
+        }
+        fig, ax = plt.subplots(1, 7)
+        for i, (key, transformed_img) in enumerate(transformations.items()):
+            if save:
+                output_path = dest / f"{src.stem}_trans_{key.lower()}.JPG"
+                cv2.imwrite(
+                    str(output_path),
+                    cv2.cvtColor(transformed_img, cv2.COLOR_BGR2RGB),
+                )
+            else:
+                ax[i].imshow(transformed_img)
+                ax[i].axis("off")
+                ax[i].set_title(key)
+        if not save:
+            plt.show()
+        plt.close(fig)
+
+    def star_filter(self, args: list):
+        """handler function for multiprocessing
+
+        Args:
+            args (list): args for callbacks
+
+        Returns:
+            any: routine returns value
+        """
+        return self.filter(*args)
+
+    def filter(
+        self,
+        src: pathlib.Path,
+        transformation: str,
+        save: bool = False,
+        dest: Optional[pathlib.Path] = None,
+    ):
+        """apply filter on image
+
+        Args:
+            src (pathlib.Path): path to image
+            transformation (str): transformation to apply
+            save (bool, optional): save to disk. Defaults to False.
+            dest (Optional[pathlib.Path], optional): dest path if save. Defaults to None.
+
+        """
+        self.open(src)
+        if transformation == "all":
+            self.all_filter(src, dest, save)
+            return
+        filtered = self.f_table[transformation]()
+        if not save:
+            plt.imshow(cv2.cvtColor(filtered, cv2.COLOR_RGB2BGR))
+            plt.axis("off")
+            plt.title(transformation.capitalize())
+            plt.show()
+            plt.close()
+            return
+        tmp = (
+            str(dest)
+            + "/"
+            + src.name[:-4]
+            + "_trans_"
+            + transformation
+            + ".JPG"
+        )
+        cv2.imwrite(tmp, filtered)
+        return True
+
+    def handle_dir(
+        self,
+        src: pathlib.Path,
+        transformation: str,
+        dest: Optional[pathlib.Path] = None,
+    ):
+        """handling function for directory
+
+        Args:
+            src (pathlib.Path): path to directory
+            transformation (str): transformation to apply
+            dest (Optional[pathlib.Path], optional): dest path if save. Defaults to None.
+        """
+        for root, _, filenames in os.walk(src):
+            images = [
+                root + "/" + image
+                for image in filenames
+                if image.endswith(".JPG")
+            ]
+            if len(images) == 0:
+                continue
+            tmp_dst = pathlib.Path(root.replace(str(src), str(dest)))
+            if not pathlib.Path.exists(tmp_dst):
+                tmp_dst.mkdir(parents=True)
 
-pcv.params.line_thickness = 2
-pcv.params.dpi = 100
-
-
-def analyze_pcv(img: MatLike, gray_img: MatLike) -> MatLike:
-    """Apply analyze filter on img
-
-    Args:
-        img (MatLike): img to apply filter
-        gray_img (MatLike): grayscale img
-
-    Returns:
-        MatLike: filtered img
-    """
-    bin_mask = pcv.threshold.otsu(gray_img=gray_img, object_type="dark")
-    height, width, _ = img.shape
-    roi = pcv.roi.rectangle(img=img, x=0, y=0, h=height, w=width)
-
-    mask = pcv.roi.filter(mask=bin_mask, roi=roi, roi_type="partial")
-
-    shape_img = pcv.analyze.size(img=img, labeled_mask=mask)
-    return shape_img
-
-
-def roi_pcv(img: MatLike, gray_img: MatLike) -> MatLike:
-    """apply roi filter on img
-
-    Args:
-        img (MatLike): img to apply filter
-        gray_img (MatLike): grayscale img
-
-    Returns:
-        MatLike: filtered img
-    """
-
-    mask = pcv.threshold.otsu(gray_img=gray_img, object_type="dark")
-
-    roi = pcv.roi.rectangle(img=mask, x=0, y=0, w=mask.shape[0], h=mask.shape[1])
-    roi_mask = pcv.roi.filter(mask=mask, roi=roi, roi_type="partial")
-
-    color_pix = np.where(mask != 0)
-    x, y, w, h = (
-        np.min(color_pix[1]),
-        np.min(color_pix[0]),
-        np.max(color_pix[1]) - np.min(color_pix[1]),
-        np.max(color_pix[0]) - np.min(color_pix[0]),
-    )
-
-    img_roi = img.copy()
-    img_roi[roi_mask != 0] = (0, 255, 0)
-    cv2.rectangle(img_roi, (x, y), (x + w, y + h), (255, 0, 0), 2)
-
-    return img_roi
-
-    # bin_mask = pcv.threshold.otsu(gray_img=gray_img, object_type="dark")
-    # bin_mask = pcv.threshold.binary(
-    #     gray_img=gray_img, object_type="light", threshold=100
-    # )
-    # # bin_mask = pcv.fill_holes(bin_mask)
-
-    # color_pix = np.where(bin_mask != 0)
-    # x, y, w, h = (
-    #     np.min(color_pix[1]),
-    #     np.min(color_pix[0]),
-    #     np.max(color_pix[1]) - np.min(color_pix[1]),
-    #     np.max(color_pix[0]) - np.min(color_pix[0]),
-    # )
-    # roi = pcv.roi.rectangle(img, x, y, h, w)
-
-    # background_mask = pcv.threshold.otsu(gray_img=gray_img, object_type="dark")
-    # background_mask = pcv.invert(pcv.fill_holes(background_mask))
-
-    # mask = pcv.roi.filter(mask=pcv.invert(bin_mask), roi=roi, roi_type="partial")
-    # colorized_mask = pcv.visualize.colorize_masks(masks=[mask], colors=["green"])
-    # colorized_mask = pcv.gaussian_blur(
-    #     img=colorized_mask, ksize=(9, 9), sigma_x=0, sigma_y=None
-    # )
-
-    # test = pcv.apply_mask(colorized_mask, pcv.invert(background_mask), "black")
-
-    # merged_image = pcv.visualize.overlay_two_imgs(test, img, alpha=0.5)
-    # merged_image = cv2.convertScaleAbs(merged_image, alpha=1.4, beta=1)
-    # cv2.rectangle(merged_image, (x, y), (x + w, y + h), (255, 0, 0), 2)
-    # return merged_image
-
-    # bin_mask = pcv.threshold.triangle(gray_img=gray_img, object_type="dark")
-    # color_pix = np.where(bin_mask != 0)
-    # x, y, w, h = (
-    #     np.min(color_pix[1]),
-    #     np.min(color_pix[0]),
-    #     np.max(color_pix[1]) - np.min(color_pix[1]),
-    #     np.max(color_pix[0]) - np.min(color_pix[0]),
-    # )
-    # roi = pcv.roi.rectangle(img, x, y, h, w)
-
-    # bin_mask = pcv.threshold.binary(
-    #     gray_img=gray_img, threshold=120, object_type="dark"
-    # )
-    # # return bin_mask
-
-    # background_mask = pcv.threshold.otsu(gray_img=gray_img, object_type="dark")
-    # background_mask = pcv.invert(pcv.fill_holes(background_mask))
-
-    # background = pcv.apply_mask(img, background_mask, "black")
-    # # pcv.plot_image(background)
-
-    # # background = pcv.invert(pcv.fill_holes(background))
-
-    # mask = pcv.roi.filter(mask=bin_mask, roi=roi, roi_type="partial")
-    # colorized_mask = pcv.visualize.colorize_masks(masks=[mask], colors=["green"])
-
-    # test = pcv.apply_mask(colorized_mask, pcv.invert(background_mask), "black")
-
-    # merged_image = pcv.visualize.overlay_two_imgs(test, img, alpha=0.4)
-    # merged_image = cv2.convertScaleAbs(merged_image, alpha=1.5, beta=1)
-    # cv2.rectangle(merged_image, (x, y), (x + w, y + h), (255, 0, 0), 2)
-
-    # return merged_image
-
-
-def landmarks_pcv(img: MatLike, gray_img: MatLike) -> MatLike:
-    """apply pseudo-landmkars filter on img
-
-    Args:
-        img (MatLike): img to apply filter
-        gray_img (MatLike): grayscale img
-
-    Returns:
-        MatLike: filtered img
-    """
-    res = img.copy()
-    bin_img = pcv.threshold.otsu(gray_img=gray_img, object_type="dark")
-    bin_img = pcv.fill_holes(bin_img)
-    left, right, center = pcv.homology.y_axis_pseudolandmarks(img=img, mask=bin_img)
-
-    for pl, pc, pr in zip(left.astype(int), right.astype(int), center.astype(int)):
-        cv2.circle(res, pl[0], radius=3, color=(209, 23, 206), thickness=-1)
-        cv2.circle(res, pr[0], radius=3, color=(49, 14, 204), thickness=-1)
-        cv2.circle(res, pc[0], radius=3, color=(222, 86, 18), thickness=-1)
-    return res
-
-
-def save_histogram(channels: list, params: dict, src: pathlib.Path, dest: pathlib.Path):
-    """create and save color histogram of img with its channels
-
-    Args:
-        channels (list): color channels
-        params (dict): formating params for color
-        src (pathlib.Path): src path
-        dest (pathlib.Path): dest path
-    """
-    fig = plt.figure(figsize=(10, 10))
-    new_plot = fig.add_subplot()
-    for i, key in enumerate(params):
-        hist = cv2.calcHist([channels[i]], [0], None, [256], [0, 256])
-        hist = hist / hist.sum() * 100
-        new_plot.plot(hist, color=params[key], label=key)
-
-    new_plot.set_axis_off()
-    new_plot.figure.tight_layout()
-    new_plot.figure.savefig(
-        str(dest) + "/" + src.name[:-4] + "_trans_histogram.JPG",
-        dpi=25.6,
-    )
-    plt.close()
-
-
-def convert_color_spaces(img: np.ndarray) -> list:
-    """convert color spaces of an img
-
-    Args:
-        img (np.ndarray): img to convert
-
-    Returns:
-        list: all channels of img
-    """
-    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
-    return [
-        img[:, :, 0],
-        img[:, :, 1],
-        img[:, :, 2],  # BGR channels
-        hsv[:, :, 0],
-        hsv[:, :, 1],
-        hsv[:, :, 2],  # HSV channels
-        lab[:, :, 0],
-        lab[:, :, 1],
-        lab[:, :, 2],  # LAB channels
-    ]
-
-
-def plot_histogram(ax, channels: list, params: dict) -> None:
-    """plot the color histogram to give axis
-
-    Args:
-        ax (_type_): ax to plot
-        channels (list): color channels
-        params (dict): formating params for color
-    """
-    for i, key in enumerate(params):
-        hist = cv2.calcHist([channels[i]], [0], None, [256], [0, 256])
-        hist = hist / hist.sum() * 100
-        ax.plot(hist, color=params[key], label=key)
-        ax.set_xlim([0, 256])
-        ax.set_xticks(range(0, 255, 25))
-    ax.grid(zorder=0)
-    ax.set_title("Color Histograms (Percentage of Pixels)")
-    ax.set_xlabel("Intensity")
-    ax.set_ylabel("Percentage of Pixels")
-    ax.legend()
-
-
-def display_histogram(channels: list, params: dict) -> None:
-    """display color histogram
-
-    Args:
-        channels (list): color channels
-        params (dict): formating params for color
-    """
-    plt.figure()
-    for i, key in enumerate(params):
-        hist = cv2.calcHist([channels[i]], [0], None, [256], [0, 256])
-        hist = hist / hist.sum() * 100
-        plt.plot(hist, color=params[key], label=key)
-    plt.xlim([0, 256])
-    plt.xticks(range(0, 255, 25))
-    plt.grid(zorder=0)
-    plt.title("Color Histograms (Percentage of Pixels)")
-    plt.xlabel("Intensity")
-    plt.ylabel("Percentage of Pixels")
-    plt.legend()
-    plt.show()
-    plt.close()
-
-
-def color_hist_pcv(
-    img: np.ndarray,
-    ax: Optional[np.ndarray] = None,
-    save: bool = False,
-    src: Optional[pathlib.Path] = None,
-    dest: Optional[pathlib.Path] = None,
-):
-    """handle color histogram
-
-    Args:
-        img (np.ndarray): img to analyze
-        ax (Optional[np.ndarray], optional): ax to plot. Defaults to None.
-        save (bool, optional): saving to disk. Defaults to False.
-        src (Optional[pathlib.Path], optional): path to img. Defaults to None.
-        dest (Optional[pathlib.Path], optional): dest path to saved img. Defaults to None.
-    """
-    channels = convert_color_spaces(img)
-
-    if save:
-        save_histogram(channels, params, src, dest)
-    elif ax is not None:
-        plot_histogram(ax, channels, params)
-    else:
-        display_histogram(channels, params)
-
-
-def save_transformed_image(
-    image: MatLike, dest: pathlib.Path, path: pathlib.Path, key: str
-) -> None:
-    """save transformed img to dest
-
-    Args:
-        image (MatLike): img to save
-        dest (pathlib.Path): destination path
-        path (pathlib.Path): src path
-        key (str): name of filter applied
-    """
-    output_path = dest / f"{path.stem}_trans_{key.lower()}.JPG"
-    cv2.imwrite(str(output_path), cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-
-
-def apply_transformations(img: MatLike, gray_img: MatLike) -> dict:
-    """get lookup table for transformations filters
-
-    Args:
-        img (MatLike): img to filter
-        gray_img (MatLike): grayscale img
-
-    Returns:
-        dict: look_up table
-    """
-    return {
-        "Original": cv2.cvtColor(img, cv2.COLOR_RGB2BGR),
-        "Blur": cv2.cvtColor(blur_pcv(img, gray_img), cv2.COLOR_RGB2BGR),
-        "Mask": cv2.cvtColor(mask_pcv(img, gray_img), cv2.COLOR_RGB2BGR),
-        "ROI": cv2.cvtColor(roi_pcv(img, gray_img), cv2.COLOR_RGB2BGR),
-        "Analyze": cv2.cvtColor(analyze_pcv(img, gray_img), cv2.COLOR_RGB2BGR),
-        "Landmarks": cv2.cvtColor(landmarks_pcv(img, gray_img), cv2.COLOR_RGB2BGR),
-    }
-
-
-def handle_all(
-    img: MatLike,
-    gray_img: MatLike,
-    path: pathlib.Path,
-    dest: pathlib.Path,
-    save: bool = False,
-) -> None:
-    """handle all transformation flag
-
-    Args:
-        img (MatLike): img to filter
-        gray_img (MatLike): grayscale of img
-        path (pathlib.Path): src path of img
-        dest (pathlib.Path): destination path for saved img
-        save (bool, optional): save to disk. Defaults to False.
-    """
-    fig = plt.figure(figsize=(10, 6))
-    gs = grsp.GridSpec(2, 6, height_ratios=[2, 1])
-
-    transformations = apply_transformations(img, gray_img)
-
-    for i, (key, transformed_img) in enumerate(transformations.items()):
-        if save:
-            # if key != "Original":
-            save_transformed_image(transformed_img, dest, path, key)
-        else:
-            ax = fig.add_subplot(gs[0, i])
-            ax.imshow(transformed_img)
-            ax.axis("off")
-            ax.set_title(key)
-
-    if save:
-        color_hist_pcv(img, save=True, src=path, dest=dest)
-    else:
-        ax = fig.add_subplot(gs[1, :])
-        color_hist_pcv(img, ax)
-        plt.show()
-
-    plt.close(fig)
-
-
-def blur_pcv(img: MatLike, gray_img: MatLike) -> MatLike:
-    """apply blur filter on img
-
-    Args:
-        img (MatLike): img to apply filter
-        gray_img (MatLike): grayscale img
-
-    Returns:
-        MatLike: filtered img
-    """
-    # bin_img = pcv.threshold.otsu(gray_img=gray_img, object_type="dark")
-    # blur = pcv.gaussian_blur(img=bin_img, ksize=(5, 5), sigma_x=0, sigma_y=None)
-    # return blur
-
-    g_img = pcv.rgb2gray_hsv(rgb_img=img, channel="s")
-    mask = pcv.threshold.binary(gray_img=g_img, threshold=60, object_type="light")
-    blurred = pcv.gaussian_blur(img=mask, ksize=(5, 5), sigma_x=0, sigma_y=None)
-    return blurred
-
-
-def mask_pcv(img: MatLike, background: MatLike) -> MatLike:
-    """apply mask filter on img
-
-    Args:
-        img (MatLike): img to apply filter
-        gray_img (MatLike): grayscale img
-
-    Returns:
-        MatLike: filtered img
-    """
-    gray_img = pcv.rgb2gray_hsv(rgb_img=img, channel="s")
-
-    mask = pcv.threshold.otsu(gray_img=gray_img, object_type="dark")
-    mask_back = pcv.threshold.otsu(gray_img=background, object_type="dark")
-
-    masked_image = pcv.apply_mask(img=img, mask=mask, mask_color="white")
-    masked_image = pcv.apply_mask(img=img, mask=mask_back, mask_color="white")
-
-    return masked_image
-
-
-def plot_image(img: MatLike, filter: str) -> None:
-    """plot img with legend
-
-    Args:
-        img (MatLike): img to plot
-        filter (str): filter name
-    """
-    plt.imshow(cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
-    plt.axis("off")
-    plt.title(filter.capitalize())
-    plt.show()
-
-
-def apply_filter(
-    path: pathlib.Path,
-    dest: pathlib.Path,
-    filter: str,
-    save: bool = False,
-) -> None:
-    """apply filter on given img at src path
-
-    Args:
-        path (pathlib.Path): path to img to filter
-        dest (pathlib.Path): destination to saved img
-        filter (str): name of filter to be applied
-        save (bool, optional): saving to disk. Defaults to False.
-    """
-    img = cv2.imread(path)
-    gray_img = pcv.rgb2gray_lab(rgb_img=img, channel="a")
-
-    filters = {
-        "blur": blur_pcv,
-        "mask": mask_pcv,
-        "roi": roi_pcv,
-        "analyze": analyze_pcv,
-        "landmarks": landmarks_pcv,
-    }
-
-    if filter == "intensity":
-        color_hist_pcv(img, save=save, src=path, dest=dest)
-        return
-    if filter == "all":
-        handle_all(img, path=path, dest=dest, save=save, gray_img=gray_img)
-        return
-
-    filtered = filters[filter](img, gray_img)
-
-    if not save:
-        plot_image(filtered, filter)
-        return
-
-    tmp = str(dest) + "/" + path.name[:-4] + "_trans_" + filter + ".JPG"
-    cv2.imwrite(tmp, filtered)
-
-
-def handle_dir(
-    args: argparse.Namespace,
-    src_path: pathlib.Path,
-    dest_path: pathlib.Path,
-):
-    """apply filter to whole directories and subdirectories at given path
-
-    Args:
-        args (argparse.Namespace): parsed arguments
-        src_path (pathlib.Path): src path of directory
-        dest_path (pathlib.Path): destination path
-    """
-    for root, _, filenames in os.walk(src_path):
-        images = [root + "/" + image for image in filenames if image.endswith(".JPG")]
-        if len(images) == 0:
-            continue
-        tmp_dst = pathlib.Path(root.replace(str(src_path), str(dest_path)))
-        if not pathlib.Path.exists(tmp_dst):
-            tmp_dst.mkdir(parents=True)
-
-        with multiprocessing.Pool() as pool:
             fct_args = list(
-                (pathlib.Path(root + "/" + file), tmp_dst, args.transformation, True)
+                (
+                    pathlib.Path(root + "/" + file),
+                    transformation,
+                    True,
+                    tmp_dst,
+                )
                 for file in filenames
             )
-            pool.starmap(apply_filter, fct_args)
+
+            with multiprocessing.Pool() as pool:
+                _ = list(
+                    tqdm(
+                        pool.imap(self.star_filter, fct_args),
+                        total=len(fct_args),
+                        desc=root,
+                    )
+                )
 
 
 def main() -> None:
@@ -479,13 +346,23 @@ def main() -> None:
         description="Apply transformation on image or folder",
     )
     parser.add_argument("src", help="path to image or directory")
-    parser.add_argument("-d", "--destination", help="path to image or directory")
+    parser.add_argument(
+        "-d", "--destination", help="path to image or directory"
+    )
     parser.add_argument(
         "-t",
         "--transformation",
         help="trans",
         default="all",
-        choices=["all", "blur", "mask", "roi", "analyze", "landmarks", "intensity"],
+        choices=[
+            "all",
+            "blur",
+            "mask",
+            "roi",
+            "analyze",
+            "landmarks",
+            "canny",
+        ],
     )
 
     args = parser.parse_args()
@@ -495,15 +372,19 @@ def main() -> None:
     if not pathlib.Path.exists(src_path):
         sys.exit("Source path does not exists")
 
-    dest_path = pathlib.Path(args.destination if args.destination else args.src)
+    dest_path = pathlib.Path(
+        args.destination if args.destination else args.src
+    )
 
     if not pathlib.Path.exists(dest_path):
         dest_path.mkdir()
 
+    transformer = ImageTransformer()
+
     if pathlib.Path.is_dir(src_path):
-        handle_dir(args, src_path, dest_path)
+        transformer.handle_dir(src_path, args.transformation, dest_path)
     else:
-        apply_filter(src_path, dest_path, args.transformation)
+        transformer.filter(src_path, args.transformation)
 
 
 if __name__ == "__main__":

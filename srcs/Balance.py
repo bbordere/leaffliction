@@ -54,7 +54,9 @@ def main() -> None:
 
     files = {}
     for root, _, filenames in os.walk(args.path):
-        images = [root + "/" + image for image in filenames if image.endswith(".JPG")]
+        images = [
+            root + "/" + image for image in filenames if image.endswith(".JPG")
+        ]
         if len(images) == 0:
             continue
         files[pathlib.PurePath(root.lower()).name] = images

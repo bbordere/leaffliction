@@ -1,18 +1,34 @@
-import logging, os
-
-logging.disable(logging.WARNING)
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-
+import os
 import tensorflow as tf
-from tensorflow.keras import layers, models
 import argparse
 import pathlib
 import sys
+from tensorflow.keras import layers
+from tensorflow.keras import models
+import numpy as np
+from tensorflow.keras.preprocessing import image
 
-IMAGE_SIZE = 32
+IMAGE_SIZE = 128
 
 
-tf.keras.utils.set_random_seed(42)
+def predict_on_folder(model, folder_path, img_height, img_width, class_names):
+    results = []
+    for img_name in os.listdir(folder_path):
+        img_path = os.path.join(folder_path, img_name)
+        img = image.load_img(img_path, target_size=(img_height, img_width))
+        img_array = image.img_to_array(img)
+        img_array = tf.expand_dims(img_array, 0)
+
+        predictions = model.predict(img_array)
+        score = predictions
+        print(score)
+
+        predicted_class = class_names[np.argmax(score)]
+        confidence = 100 * np.max(score)
+
+        results.append((img_name, predicted_class, confidence))
+
+    return results
 
 
 def main():
@@ -73,37 +89,38 @@ def main():
     with open("class_names.txt", "w") as file:
         print(*class_names, file=file)
 
-    num_classes = len(class_names)
-
     early_stopping = tf.keras.callbacks.EarlyStopping(
-        monitor="val_loss", patience=5, restore_best_weights=True
+        monitor="val_loss",
+        patience=5,
+        restore_best_weights=True,
     )
 
-    model = models.Sequential()
-    model.add(layers.Conv2D(32, (3, 3), activation="relu"))
-    model.add(layers.BatchNormalization())
-    model.add(layers.MaxPooling2D((2, 2)))
-    model.add(layers.Dropout(0.25))
-
-    model.add(layers.Conv2D(64, (3, 3), activation="relu"))
-    model.add(layers.BatchNormalization())
-    model.add(layers.MaxPooling2D((2, 2)))
-    model.add(layers.Dropout(0.25))
-
-    model.add(layers.Conv2D(128, (3, 3), activation="relu"))
-    model.add(layers.BatchNormalization())
-    model.add(layers.MaxPooling2D((2, 2)))
-    model.add(layers.Dropout(0.25))
-
-    model.add(layers.Flatten())
-    model.add(layers.BatchNormalization())
-    model.add(layers.Dense(128, activation="relu"))
-    model.add(layers.Dropout(0.5))
-    model.add(layers.Dense(num_classes, activation="softmax"))
+    model = models.Sequential(
+        [
+            layers.Rescaling(1.0 / 255),
+            layers.Conv2D(32, (3, 3), activation="relu"),
+            layers.BatchNormalization(),
+            layers.MaxPooling2D((2, 2)),
+            layers.Conv2D(64, (3, 3), activation="relu"),
+            layers.BatchNormalization(),
+            layers.MaxPooling2D((2, 2)),
+            layers.Conv2D(128, (3, 3), activation="relu"),
+            layers.BatchNormalization(),
+            layers.MaxPooling2D((2, 2)),
+            layers.Dropout(0.1),
+            layers.Conv2D(128, (3, 3), activation="relu"),
+            layers.BatchNormalization(),
+            layers.MaxPooling2D((2, 2)),
+            layers.Dropout(0.1),
+            layers.Flatten(),
+            layers.Dense(512, activation="relu"),
+            layers.Dense(len(train_ds.class_names), activation="softmax"),
+        ]
+    )
 
     model.compile(
         optimizer="adam",
-        loss=tf.keras.losses.SparseCategoricalCrossentropy(),
+        loss="sparse_categorical_crossentropy",
         metrics=["accuracy"],
     )
 
