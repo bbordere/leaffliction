@@ -35,7 +35,7 @@ def main() -> None:
     if len(files) == 0:
         sys.exit("Path does not contains images")
 
-    palette = sns.color_palette("pastel")
+    palette = sns.color_palette("pastel")[: len(files)]
     df = pd.DataFrame(files.items())
     fig, ax = plt.subplots(1, 2, figsize=(15, 8))
     ax[0].pie(x=df[1], colors=palette, autopct="%.1f%%")

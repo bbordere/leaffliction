@@ -11,7 +11,25 @@ from tensorflow.keras.preprocessing import image
 IMAGE_SIZE = 128
 
 
-def predict_on_folder(model, folder_path, img_height, img_width, class_names):
+def predict_on_folder(
+    model: any,
+    folder_path: str,
+    img_height: int,
+    img_width: int,
+    class_names: list[str],
+) -> np.ndarray:
+    """make predictions on folder
+
+    Args:
+        model (any): model to use for predictions
+        folder_path (str): path to image
+        img_height (int): height of images
+        img_width (int): width of images
+        class_names (list[str]): class names
+
+    Returns:
+        np.ndarray: predictions
+    """
     results = []
     for img_name in os.listdir(folder_path):
         img_path = os.path.join(folder_path, img_name)

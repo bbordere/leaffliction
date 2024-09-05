@@ -11,11 +11,12 @@ import os
 import tensorflow as tf
 from Transformation import ImageTransformer
 import matplotlib.pyplot as plt
-from train import IMAGE_SIZE
 
 class_names = []
 truth = []
 predict = []
+
+IMAGE_SIZE = None
 
 
 def label_name(class_names: list, path: str) -> str:
@@ -43,7 +44,7 @@ def make_prediction(
         bar (any, optional): bar instance for directory mode. Defaults to None.
     """
     t = ImageTransformer()
-    t.open(path, (IMAGE_SIZE, IMAGE_SIZE), pred=True)
+    t.open(path, IMAGE_SIZE, pred=True)
     transformations = np.stack(
         [
             t.img,
@@ -85,7 +86,7 @@ def handle_dir(path: str, model: any):
 
         with alive_bar(len(images), title=root) as bar:
             for p in images:
-                make_prediction(p, model, True, bar)
+                make_prediction(p, model, False, bar)
 
 
 def display_prediction(
@@ -146,6 +147,7 @@ def main():
     global labels
     global truth
     global predict
+    global IMAGE_SIZE
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -181,8 +183,14 @@ def main():
         sys.exit("Class names file does not exist")
 
     model = tf.keras.models.load_model(args.model_path)
+    print(model.summary())
 
-    global class_names
+    config = model.get_config()
+    IMAGE_SIZE = (
+        config["layers"][0]["config"]["batch_shape"][1],
+        config["layers"][0]["config"]["batch_shape"][2],
+    )
+
     with open("class_names.txt", "r") as file:
         class_names = file.readline().split()
     labels = {l: i for i, l in enumerate(class_names)}
