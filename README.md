@@ -24,3 +24,9 @@ Once the final dataset has been generated, we need to use it to train our model.
 </br>
 After having trained our model, we can use it to make predictions
 The **predict.py** program take a leaf image as input, applies transformations, and identifies the type of disease present
+
+![Predict](https://github.com/user-attachments/assets/ba9fa021-28ef-44bb-bbbb-a720d8264e3b)
+
+To check the accuracy of the model, we can obtain the confusion matrix for directory path passed as parameter
+
+![confusion_matrix](https://github.com/user-attachments/assets/b61453ce-67b4-4662-9d71-bc46d35cc335)
