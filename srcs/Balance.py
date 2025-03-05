@@ -61,9 +61,11 @@ def main() -> None:
             continue
         files[pathlib.PurePath(root.lower()).name] = images
 
-    label_min = min(files, key=lambda key: len(files[key]))
+    label_max = max(files, key=lambda key: len(files[key]))
 
-    target_num_img = len(files[label_min]) * 6
+    target_num_img = len(files[label_max])
+
+    files.pop(label_max)
 
     for label in files:
         counter = target_num_img - len(files[label])

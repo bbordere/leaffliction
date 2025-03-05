@@ -37,7 +37,8 @@ class ImageTransformer:
 
         Args:
             path (pathlib.Path): path to img
-            size (tuple, optional): target size for image. Defaults to (256, 256).
+            size (tuple, optional): target size for image.
+                Defaults to (256, 256).
             pred (bool, optional): prediction flag. Defaults to False.
         """
 
@@ -269,7 +270,8 @@ class ImageTransformer:
             src (pathlib.Path): path to image
             transformation (str): transformation to apply
             save (bool, optional): save to disk. Defaults to False.
-            dest (Optional[pathlib.Path], optional): dest path if save. Defaults to None.
+            dest (Optional[pathlib.Path], optional): dest path if save.
+                Defaults to None.
 
         """
         self.open(src)
@@ -306,7 +308,8 @@ class ImageTransformer:
         Args:
             src (pathlib.Path): path to directory
             transformation (str): transformation to apply
-            dest (Optional[pathlib.Path], optional): dest path if save. Defaults to None.
+            dest (Optional[pathlib.Path], optional): dest path if save.
+                Defaults to None.
         """
         for root, _, filenames in os.walk(src):
             images = [

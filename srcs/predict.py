@@ -98,7 +98,8 @@ def display_prediction(
         path (str): path to image
         t (ImageTransformer): image transformer class
         label_pred (_type_): label predicted
-        save (bool, optional): save to disk instead of displaying. Defaults to False.
+        save (bool, optional): save to disk instead of displaying.
+            Defaults to False.
     """
     size = t.original_img.shape[:2]
     t.open(path, size)
@@ -205,14 +206,13 @@ def main():
         make_prediction(args.path, model)
 
     if args.c_mat:
-        class_predicted = [class_names[c] for c in set(predict)]
         cf_matrix = confusion_matrix(truth, predict)
         seaborn.heatmap(
             cf_matrix,
             annot=True,
             cmap="Blues",
-            xticklabels=class_predicted,
-            yticklabels=class_predicted,
+            xticklabels=class_names,
+            yticklabels=class_names,
             fmt="g",
         )
         plt.xticks(rotation=45, ha="right")
